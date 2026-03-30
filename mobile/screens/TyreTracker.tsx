@@ -11,7 +11,6 @@ import { useQuery } from '@tanstack/react-query';
 import { live } from '../lib/api';
 import type { Stint, Driver } from '../lib/api';
 import { Colors, Spacing, FontSize, Radius } from '../constants/theme';
-import { SessionPicker } from '../components/SessionPicker';
 import { CompoundBadge } from '../components/CompoundBadge';
 import { useOpenF1LiveContext } from '../hooks/useOpenF1LiveContext';
 import { isHistoricalOnly } from '../lib/config';
@@ -197,7 +196,11 @@ export default function TyreTracker() {
         <View style={styles.centered}>
           <ActivityIndicator color={Colors.primary} size="large" />
           <Text style={styles.loadingText}>Syncing with the timing feed…</Text>
-          <Text style={styles.loadingSub}>Resolving which session OpenF1 is publishing.</Text>
+          <Text style={styles.loadingSub}>
+            {isHistoricalOnly()
+              ? 'Resolving default or selected session for stints and tyres.'
+              : 'Resolving which session OpenF1 is publishing (map_session).'}
+          </Text>
         </View>
       ) : loading && tyreData.length === 0 ? (
         <View style={styles.centered}>
@@ -222,11 +225,6 @@ export default function TyreTracker() {
                     <Text style={styles.liveBadgeText}>LIVE</Text>
                   </View>
                 )}
-              </View>
-
-              {/* Session picker */}
-              <View style={styles.pickerRow}>
-                <SessionPicker />
               </View>
 
               {/* Compound legend */}
@@ -298,11 +296,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.primary + '55',
   },
   liveBadgeText: { color: Colors.primary, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-
-  pickerRow: {
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
 
   legend: {
     flexDirection: 'row', gap: Spacing.md, flexWrap: 'wrap',

@@ -3,6 +3,7 @@ import RaceHub from '../../screens/RaceHub';
 import TyreTracker from '../../screens/TyreTracker';
 import LapLog from '../../screens/LapLog';
 import DriverCards from '../../screens/DriverCards';
+import { SessionPicker } from '../../components/SessionPicker';
 import { Colors, Spacing, FontSize } from '../../constants/theme';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useState } from 'react';
@@ -53,6 +54,13 @@ export default function RaceTab() {
         </ScrollView>
       </View>
 
+      {/* Shared session — same race/weekend on every sub-tab (no need to open Map to switch). */}
+      <View style={styles.sessionBar}>
+        <View style={styles.sessionBarInner}>
+          <SessionPicker expandPill />
+        </View>
+      </View>
+
       {/* Content */}
       <View style={{ flex: 1 }}>
         <SubScreenContent screen={active} />
@@ -67,6 +75,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  sessionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  sessionBarInner: { flex: 1, minWidth: 0 },
   subNavContent: { paddingHorizontal: Spacing.sm, gap: 0, alignItems: 'stretch' },
   subNavItem: {
     paddingHorizontal: Spacing.md, paddingVertical: 11,

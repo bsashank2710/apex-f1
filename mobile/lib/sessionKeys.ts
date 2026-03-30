@@ -5,6 +5,16 @@
 
 const _SYNTH_SK_YEAR_MUL = 1_000_000;
 const _SYNTH_SK_ROUND_MUL = 10_000;
+/** Race session kind — matches `live.py` `_KIND_RACE`. */
+const _KIND_RACE = 1;
+
+/**
+ * Encode Ergast-only synthetic Race session_key (negative int) for live/* endpoints.
+ * Must match `backend/routers/live.py` `_encode_synthetic_session_key(year, round, _KIND_RACE)`.
+ */
+export function encodeSyntheticRaceSessionKey(year: number, round: number): number {
+  return -(year * _SYNTH_SK_YEAR_MUL + round * _SYNTH_SK_ROUND_MUL + _KIND_RACE);
+}
 
 export type SyntheticSessionKind = 'race' | 'qualifying' | 'sprint';
 

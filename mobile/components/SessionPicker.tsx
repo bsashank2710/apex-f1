@@ -51,7 +51,7 @@ const SESSION_ICONS: Record<string, string> = {
   'Practice 1': '🔵',
 };
 
-export function SessionPicker() {
+export function SessionPicker({ expandPill = false }: { expandPill?: boolean }) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(() => String(new Date().getFullYear()));
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
@@ -155,7 +155,11 @@ export function SessionPicker() {
 
   return (
     <>
-      <TouchableOpacity style={styles.pill} onPress={() => setOpen(true)} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={[styles.pill, expandPill && styles.pillExpand]}
+        onPress={() => setOpen(true)}
+        activeOpacity={0.7}
+      >
         <Text style={styles.pillIcon}>◎</Text>
         <Text style={styles.pillText} numberOfLines={1}>
           {sessionLabel()}
@@ -175,14 +179,14 @@ export function SessionPicker() {
             </TouchableOpacity>
           </View>
 
-          {/* Live “latest” — hidden in finished-race mode (no OpenF1 polling). */}
-          {!isHistoricalOnly() && (
-            <TouchableOpacity style={styles.latestBtn} onPress={handleSelectLatest}>
-              <Text style={styles.latestBtnIcon}>⚡</Text>
-              <Text style={styles.latestBtnText}>LATEST SESSION</Text>
-              {selectedSessionKey === 'latest' && <Text style={styles.checkmark}>✓</Text>}
-            </TouchableOpacity>
-          )}
+          {/* Live: true latest. Historical: same action — API default finished race (no way to get “live” without polling). */}
+          <TouchableOpacity style={styles.latestBtn} onPress={handleSelectLatest}>
+            <Text style={styles.latestBtnIcon}>⚡</Text>
+            <Text style={styles.latestBtnText}>
+              {isHistoricalOnly() ? 'DEFAULT FINISHED RACE' : 'LATEST SESSION'}
+            </Text>
+            {selectedSessionKey === 'latest' && <Text style={styles.checkmark}>✓</Text>}
+          </TouchableOpacity>
 
           {/* Year selector */}
           <ScrollView
@@ -301,6 +305,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
     paddingHorizontal: 12, paddingVertical: 6,
     alignSelf: 'flex-start', maxWidth: 220,
+  },
+  pillExpand: {
+    alignSelf: 'stretch', flex: 1, maxWidth: '100%', minWidth: 0,
   },
   pillIcon: { color: Colors.primary, fontSize: 11 },
   pillText: { color: Colors.text, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, flex: 1 },

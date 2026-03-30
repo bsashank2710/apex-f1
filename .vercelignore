@@ -1,0 +1,7 @@
+# Faster uploads — Vercel only needs files for `npm ci --prefix mobile` + source.
+backend/venv
+**/__pycache__
+**/*.pyc
+.git
+mobile/dist
+*.log

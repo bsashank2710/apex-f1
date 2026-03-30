@@ -31,6 +31,12 @@ const FETCH_TIMEOUT_MS = 30_000;
 const INTEL_FETCH_TIMEOUT_MS = 120_000;
 /** FastF1 circuit_map: server allows 180s; default 30s fetch caused false “unavailable” on first download. */
 const CIRCUIT_MAP_FETCH_TIMEOUT_MS = 190_000;
+/**
+ * FastF1 laps/stints/drivers: on first request the server downloads and parses the full session
+ * file from the FastF1 cache (can take 60–180 s). 30 s caused mobile to time-out and show nothing.
+ * Subsequent requests hit the in-memory/Redis cache and are fast.
+ */
+const FASTF1_FETCH_TIMEOUT_MS = 190_000;
 
 async function get<T>(
   path: string,
@@ -110,7 +116,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 export const live = {
   snapshot: (sessionKey: string | number = 'latest') =>
-    get<RaceSnapshot>('/live/race_snapshot', { session_key: sessionKey }),
+    get<RaceSnapshot>('/live/race_snapshot', { session_key: sessionKey }, { timeoutMs: FASTF1_FETCH_TIMEOUT_MS }),
 
   session: () => get<Session>('/live/session'),
 
@@ -134,7 +140,7 @@ export const live = {
     get<Meeting[]>('/live/meetings', { year }),
 
   drivers: (sessionKey: string | number = 'latest') =>
-    get<Driver[]>('/live/drivers', { session_key: sessionKey }),
+    get<Driver[]>('/live/drivers', { session_key: sessionKey }, { timeoutMs: FASTF1_FETCH_TIMEOUT_MS }),
 
   carData: (sessionKey: string | number = 'latest', driverNumber?: number) =>
     get<CarData[]>('/live/car_data', { session_key: sessionKey, driver_number: driverNumber }),
@@ -146,10 +152,10 @@ export const live = {
     get<Interval[]>('/live/intervals', { session_key: sessionKey }),
 
   laps: (sessionKey: string | number = 'latest', driverNumber?: number) =>
-    get<Lap[]>('/live/laps', { session_key: sessionKey, driver_number: driverNumber }),
+    get<Lap[]>('/live/laps', { session_key: sessionKey, driver_number: driverNumber }, { timeoutMs: FASTF1_FETCH_TIMEOUT_MS }),
 
   stints: (sessionKey: string | number = 'latest', driverNumber?: number) =>
-    get<Stint[]>('/live/stints', { session_key: sessionKey, driver_number: driverNumber }),
+    get<Stint[]>('/live/stints', { session_key: sessionKey, driver_number: driverNumber }, { timeoutMs: FASTF1_FETCH_TIMEOUT_MS }),
 
   pits: (sessionKey: string | number = 'latest') =>
     get<Pit[]>('/live/pits', { session_key: sessionKey }),

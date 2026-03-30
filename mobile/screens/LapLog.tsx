@@ -12,7 +12,6 @@ import { useQuery } from '@tanstack/react-query';
 import { live } from '../lib/api';
 import type { Lap, Driver } from '../lib/api';
 import { Colors, Spacing, FontSize, Radius } from '../constants/theme';
-import { SessionPicker } from '../components/SessionPicker';
 import { useOpenF1LiveContext } from '../hooks/useOpenF1LiveContext';
 import { isHistoricalOnly } from '../lib/config';
 import { useStableLiveList } from '../hooks/useStableLiveList';
@@ -151,7 +150,11 @@ export default function LapLog() {
       <View style={[styles.container, styles.resolvingBox]}>
         <ActivityIndicator color={Colors.primary} size="large" />
         <Text style={styles.resolvingTitle}>Syncing session…</Text>
-        <Text style={styles.resolvingSub}>Waiting for map_session so lap keys match the live weekend.</Text>
+        <Text style={styles.resolvingSub}>
+          {isHistoricalOnly()
+            ? 'Resolving default or selected session so lap times use the correct OpenF1 key.'
+            : 'Waiting for map_session so lap keys match the live weekend.'}
+        </Text>
       </View>
     );
   }
@@ -188,11 +191,6 @@ export default function LapLog() {
                   </Text>
                 </TouchableOpacity>
               </View>
-            </View>
-
-            {/* Session picker */}
-            <View style={styles.pickerRow}>
-              <SessionPicker />
             </View>
 
             {/* Driver filter chips */}
@@ -283,11 +281,6 @@ const styles = StyleSheet.create({
   sortChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   sortText: { color: Colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   sortTextActive: { color: Colors.text },
-
-  pickerRow: {
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
 
   filterScroll: {
     maxHeight: 38,

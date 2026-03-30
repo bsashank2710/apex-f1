@@ -147,7 +147,7 @@ async def finished_default_session(
         "location": loc.get("locality"),
         "date_start": race.get("date"),
     }
-    await _response_cache.set(cache_key, payload, ttl=300)
+    await _response_cache.set(cache_key, payload, ttl=6 * 3600)  # historical race — data is final
     return payload
 
 

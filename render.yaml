@@ -1,0 +1,34 @@
+# Render Blueprint — deploy API: Dashboard → New → Blueprint → connect this repo, or `render blueprint apply`.
+# https://render.com/docs/blueprint-spec
+#
+# After deploy, set on Vercel (web): EXPO_PUBLIC_API_URL = your Render service URL (https://…onrender.com)
+# and add that same Render URL to backend ALLOWED_ORIGINS if you don’t use "*".
+
+services:
+  - type: web
+    name: apex-f1-api
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      # Render injects PORT automatically — do not pin it here.
+      # Comma-separated; use your future Vercel URL + localhost for dev. "*" allows any origin.
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      # Optional — app works without Redis (fail-open cache)
+      - key: REDIS_URL
+        sync: false
+      # OpenF1 — set in Render dashboard (secret)
+      - key: OPENF1_USERNAME
+        sync: false
+      - key: OPENF1_PASSWORD
+        sync: false
+      - key: OPENF1_ACCESS_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: API_KEY
+        sync: false

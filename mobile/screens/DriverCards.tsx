@@ -25,11 +25,22 @@ function hiResUrl(url?: string): string | undefined {
 }
 
 function HeadshotImage({ url, acronym, color, size }: { url?: string; acronym?: string; color: string; size?: number }) {
+  // Try hi-res (/3col/) first; if it errors on native (CDN blocks or path missing), retry with original (/1col/).
+  const [useHiRes, setUseHiRes] = useState(true);
   const [failed, setFailed] = useState(false);
   const containerStyle = size
     ? { width: size, height: size, borderRadius: size / 2, overflow: 'hidden' as const, backgroundColor: color + '15' }
     : undefined;
-  const src = hiResUrl(url);
+  const hiRes = hiResUrl(url);
+  const src = useHiRes ? hiRes : url;
+
+  const handleError = () => {
+    if (useHiRes && url && hiRes !== url) {
+      setUseHiRes(false); // retry with original /1col/ URL
+    } else {
+      setFailed(true);
+    }
+  };
 
   if (src && !failed) {
     return (
@@ -38,7 +49,7 @@ function HeadshotImage({ url, acronym, color, size }: { url?: string; acronym?: 
           source={{ uri: src }}
           style={containerStyle ? { width: size, height: size } : styles.headshot}
           resizeMode="contain"
-          onError={() => setFailed(true)}
+          onError={handleError}
           onLoad={(e: any) => {
             // F1 CDN returns a tiny generic silhouette (~2500 bytes, ~200x200) when
             // the driver has no official photo. Real portraits are tall (height >> width).
@@ -243,6 +254,18 @@ export default function DriverCards() {
     ? standingsMap.get(selectedDriver.name_acronym)
     : undefined;
 
+  if (!openF1KeyReady) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={Colors.primary} size="large" />
+        <Text style={styles.loadingText}>Resolving session…</Text>
+        <Text style={styles.loadingSub}>
+          Waiting for OpenF1 session key so driver data matches the selected weekend.
+        </Text>
+      </View>
+    );
+  }
+
   if (loadingDrivers) {
     return (
       <View style={styles.centered}>
@@ -304,6 +327,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background, gap: Spacing.sm,
   },
   loadingText: { color: Colors.textSecondary, fontSize: FontSize.sm },
+  loadingSub: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.xs,
+  },
 
   listHeader: {
     paddingHorizontal: Spacing.sm, paddingTop: Spacing.md, paddingBottom: Spacing.xs,

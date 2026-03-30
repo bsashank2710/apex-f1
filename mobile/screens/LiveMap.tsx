@@ -252,11 +252,11 @@ function TrackSvg({
     return out;
   }, [path, arcs, norm]);
 
-  const baseR   = Math.max(6.5, Math.min(11, size / 48));
-  const LABEL_H = Math.round(12 + 4 * sc);
+  const baseR   = Math.max(8, Math.min(13, size / 42));
+  const LABEL_H = Math.round(13 + 4 * sc);
   const LABEL_RX = 5;
   const vb = `0 0 ${size} ${size}`;
-  const fsLbl = Math.round(9 + 2 * sc);
+  const fsLbl = Math.round(10 + 2 * sc);
   const fsSec = Math.round(8 + sc);
   /** RN-web: SVG as inline replaced content needs `display: block` or it can paint with ~0 height. */
   const svgWebStyle: import('react-native').StyleProp<import('react-native').ViewStyle> | undefined =
@@ -823,11 +823,12 @@ function MapContent() {
   const { width, height } = useWindowDimensions();
   /** Square map: prioritize size — up to ~88% of viewport height minus chrome. */
   const mapSize = useMemo(() => {
-    const pad = 12;
+    const pad = 10;
     const usableW = Math.max(0, width - pad * 2);
-    const maxByH  = Math.max(300, Math.min(height * 0.88, height - 88));
+    /** Use more vertical space so replay dots and labels are easier to read. */
+    const maxByH  = Math.max(320, Math.min(height * 0.92, height - 48));
     const side    = Math.floor(Math.min(usableW, maxByH));
-    return Math.max(300, Math.min(side, 1700));
+    return Math.max(320, Math.min(side, 1700));
   }, [width, height]);
 
   const {

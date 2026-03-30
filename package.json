@@ -1,6 +1,9 @@
 {
   "name": "apex-f1",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "description": "Shareable APK: cd mobile && npm run build:android — see mobile/BUILD-APK.md",
   "scripts": {
     "start": "npm --prefix mobile run start",
@@ -27,6 +30,8 @@
     "docker:api": "docker build -t apex-f1-api:latest ./backend",
     "compose:up": "docker compose up --build",
     "build": "npm run build:web && npm run docker:api",
+    "deploy:web": "npx --yes vercel@latest deploy --prod",
+    "deploy:web:preview": "npx --yes vercel@latest deploy",
     "expo:login": "npm run expo:login --prefix mobile",
     "expo:whoami": "npm run expo:whoami --prefix mobile",
     "expo:project": "npm run expo:project --prefix mobile",

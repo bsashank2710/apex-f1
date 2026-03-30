@@ -16,8 +16,9 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
 # Circuit outlines rarely change — cache JSON aggressively (Redis if configured).
 _CIRCUIT_MAP_TTL_SEC = int(os.getenv("CIRCUIT_MAP_CACHE_TTL", str(14 * 24 * 3600)))
-# Shorter TTL so new rounds / post-race corrections appear after F1 publishes to the timing CDN.
-_FASTF1_ROUND_LIVE_TTL_SEC = int(os.getenv("FASTF1_LIVE_CACHE_TTL", "180"))
+# FastF1 session data (drivers/laps/stints) for a completed race never changes.
+# Default 6 h; override with FASTF1_LIVE_CACHE_TTL env var (e.g. "180" for live-session dev).
+_FASTF1_ROUND_LIVE_TTL_SEC = int(os.getenv("FASTF1_LIVE_CACHE_TTL", str(6 * 3600)))
 
 # FastF1 is CPU-bound; run in thread pool to avoid blocking the event loop
 import concurrent.futures

@@ -104,6 +104,26 @@ async def _warmup_last_finished_default() -> None:
             ergast.get_race_results(year, rnd),
             return_exceptions=True,
         )
+
+        # Pre-warm the slow FastF1 paths (drivers / laps / stints) so the first mobile
+        # request hits Redis/memory instead of triggering a 60-180 s download.
+        from routers.live import _try_fastf1_drivers, _try_fastf1_laps, _try_fastf1_stints
+        _warmup_log.info("Warmup (finished default): pre-caching FastF1 drivers/laps/stints for %s R%s …", year, rnd)
+        drivers, laps, stints = await asyncio.gather(
+            _try_fastf1_drivers(year, rnd, 1),   # kind 1 = Race
+            _try_fastf1_laps(year, rnd, 1),
+            _try_fastf1_stints(year, rnd, 1),
+            return_exceptions=True,
+        )
+        d_ok = isinstance(drivers, list) and len(drivers) > 0
+        l_ok = isinstance(laps, list) and len(laps) > 0
+        s_ok = isinstance(stints, list) and len(stints) > 0
+        _warmup_log.info(
+            "Warmup (finished default): FastF1 ready — drivers=%s laps=%s stints=%s",
+            len(drivers) if d_ok else "EMPTY",
+            len(laps) if l_ok else "EMPTY",
+            len(stints) if s_ok else "EMPTY",
+        )
     except Exception as e:
         _warmup_log.warning("Warmup (finished default) failed (non-fatal): %s", e)
 

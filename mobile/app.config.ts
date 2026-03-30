@@ -46,6 +46,21 @@ export default (): ExpoConfig => ({
   },
   web: {
     favicon: './assets/favicon.png',
+    /** PWA manifest + meta (Add to Home Screen / install). */
+    name: 'APEX Race Hub',
+    shortName: 'APEX',
+    description: 'Live F1 timing, map replay, tyres, and strategy — APEX Race Hub.',
+    lang: 'en',
+    themeColor: '#E8002D',
+    backgroundColor: '#000000',
+    display: 'standalone',
+    orientation: 'portrait',
+    /** Shown while the web bundle loads after opening from the home-screen icon. */
+    splash: {
+      backgroundColor: '#000000',
+      resizeMode: 'contain',
+      image: './assets/splash-icon.png',
+    },
     /** Production static export: `npm run build:web` → `dist/` */
     output: 'static',
   },
