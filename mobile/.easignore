@@ -1,0 +1,4 @@
+# Do not upload local .env to EAS (would bake localhost into device builds)
+.env
+.env.*
+!.env.example

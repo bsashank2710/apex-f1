@@ -1,0 +1,29 @@
+# Local tooling (machine-specific)
+.claude/
+
+# Environment secrets — never commit these
+.env
+.env.local
+.env.production
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+backend/venv/
+*.egg-info/
+.pytest_cache/
+.cache/
+
+# FastF1 session cache
+fastf1_cache/
+~/.cache/fastf1
+
+# Node
+node_modules/
+.expo/
+dist/
+build/

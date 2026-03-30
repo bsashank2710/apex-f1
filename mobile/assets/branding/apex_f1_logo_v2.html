@@ -1,0 +1,167 @@
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,900&family=Barlow:wght@400;500&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #080808;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  overflow: hidden;
+}
+
+.logo-wrap {
+  position: relative;
+  display: inline-block;
+  padding: 40px 60px;
+}
+
+/* Background noise texture */
+.logo-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.mark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  position: relative;
+}
+
+/* Red slash bar */
+.slash-bar {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -12px;
+  width: 5px;
+  background: linear-gradient(180deg, #FF1801 0%, #cc1000 100%);
+  box-shadow: 0 0 20px #FF1801aa, 0 0 60px #FF180144;
+}
+
+/* Top label */
+.top-label {
+  font-family: 'Barlow', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 6px;
+  color: #FF1801;
+  text-transform: uppercase;
+  padding-left: 2px;
+  margin-bottom: 4px;
+}
+
+/* APEX lettering */
+.apex-text {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-style: italic;
+  font-weight: 900;
+  font-size: 110px;
+  line-height: 0.88;
+  color: #fff;
+  letter-spacing: -3px;
+  position: relative;
+  text-transform: uppercase;
+  /* Clip the E with red fill */
+}
+
+.apex-text .a { color: #fff; }
+.apex-text .p { color: #fff; }
+.apex-text .e { color: #fff; position: relative; }
+.apex-text .x {
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(255,255,255,0.35);
+  letter-spacing: -2px;
+}
+
+/* Race line underline */
+.race-line {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 8px;
+  width: 100%;
+}
+.race-line .dash {
+  height: 2px;
+  background: #FF1801;
+  width: 40px;
+  box-shadow: 0 0 8px #FF1801;
+}
+.race-line .track {
+  height: 1px;
+  background: linear-gradient(90deg, #FF1801, #333 80%);
+  flex: 1;
+}
+
+/* Bottom sub */
+.bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.bottom-row .sub {
+  font-family: 'Barlow', sans-serif;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 5px;
+  color: #555;
+  text-transform: uppercase;
+}
+.bottom-row .dot {
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: #FF1801;
+  box-shadow: 0 0 6px #FF1801;
+}
+
+/* Speed streaks behind the text */
+.streaks {
+  position: absolute;
+  top: 50%;
+  right: -20px;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 0.15;
+}
+.streaks span {
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #fff);
+}
+</style>
+
+<div class="logo-wrap">
+  <div class="mark">
+    <div class="slash-bar"></div>
+    <div class="top-label">Formula 1 Intelligence</div>
+    <div class="apex-text">
+      <span class="a">A</span><span class="p">P</span><span class="e">E</span><span class="x">X</span>
+    </div>
+    <div class="race-line">
+      <div class="dash"></div>
+      <div class="track"></div>
+    </div>
+    <div class="bottom-row">
+      <span class="dot"></span>
+      <span class="sub">Race · Strategy · Data</span>
+    </div>
+  </div>
+  <div class="streaks">
+    <span style="width:90px"></span>
+    <span style="width:60px"></span>
+    <span style="width:120px"></span>
+    <span style="width:45px"></span>
+  </div>
+</div>

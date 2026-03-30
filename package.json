@@ -1,0 +1,42 @@
+{
+  "name": "apex-f1",
+  "private": true,
+  "description": "Shareable APK: cd mobile && npm run build:android — see mobile/BUILD-APK.md",
+  "scripts": {
+    "start": "npm --prefix mobile run start",
+    "mobile": "npm --prefix mobile run start",
+    "mobile:8082": "npm --prefix mobile run start:8082",
+    "dev:api": "cd backend && ./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
+    "dev:web": "cd mobile && env -u CI npx expo start --web --port 8083",
+    "dev:web:local": "cd mobile && env -u CI EXPO_PUBLIC_API_URL=http://127.0.0.1:8000 npx expo start --web --port 8083",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev:api\" \"npm run dev:web:local\"",
+    "qr": "npm run dev:phone",
+    "qr:apk": "npm run qr:apk --prefix mobile",
+    "dev:phone": "concurrently -k -n api,expo -c blue,green \"npm run dev:api\" \"npm run dev:phone:expo\"",
+    "dev:phone:lan": "concurrently -k -n api,expo -c blue,green \"npm run dev:api\" \"npm run dev:phone:expo:lan\"",
+    "dev:phone:expo": "cd mobile && env -u CI npx expo start --tunnel --go",
+    "dev:phone:expo:lan": "cd mobile && env -u CI npx expo start --lan --go",
+    "build:web": "npm --prefix mobile run build:web",
+    "build:web:local": "cd mobile && env EXPO_PUBLIC_API_URL=http://127.0.0.1:8000 npx expo export --platform web",
+    "build:android": "npm --prefix mobile run build:android",
+    "build:android:preview": "npm --prefix mobile run build:android:preview",
+    "build:android:ci": "npm --prefix mobile run build:android:ci",
+    "build:android:production": "npm --prefix mobile run build:android:production",
+    "build:ios:preview": "npm --prefix mobile run build:ios:preview",
+    "build:ios:production": "npm --prefix mobile run build:ios:production",
+    "docker:api": "docker build -t apex-f1-api:latest ./backend",
+    "compose:up": "docker compose up --build",
+    "build": "npm run build:web && npm run docker:api",
+    "expo:login": "npm run expo:login --prefix mobile",
+    "expo:whoami": "npm run expo:whoami --prefix mobile",
+    "expo:project": "npm run expo:project --prefix mobile",
+    "expo:build:android": "npm run build:android --prefix mobile",
+    "expo:build:android:local": "npm run build:android:local --prefix mobile",
+    "expo:build:ios": "npm run build:ios:preview --prefix mobile",
+    "eas:login": "npm run eas:login --prefix mobile",
+    "eas:whoami": "npm run eas:whoami --prefix mobile"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
