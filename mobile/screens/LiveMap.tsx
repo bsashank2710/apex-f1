@@ -29,7 +29,10 @@ import {
   type SectorId,
 } from '../components/FastestSectorsPanel';
 import { sortDriverNumbersByInterval } from '../lib/f1RaceVisualization';
-import { openF1LocationMatchesErgastRace } from '../lib/openF1ErgastMatch';
+import {
+  ergastRoundForOpenF1Focus,
+  openF1LocationMatchesErgastRace,
+} from '../lib/openF1ErgastMatch';
 import { isHistoricalOnly } from '../lib/config';
 import {
   expandQualifyingSessionName,
@@ -37,6 +40,10 @@ import {
   sessionSupportsErgastLapReplay,
 } from '../lib/sessionDisplay';
 import { QualifyingResultsPanel } from '../components/QualifyingResultsPanel';
+import {
+  decodeSyntheticMeetingKey,
+  decodeSyntheticSessionKey,
+} from '../lib/sessionKeys';
 
 // ── Geometry ───────────────────────────────────────────────────────────────────
 
@@ -821,15 +828,6 @@ function seasonYearFromSession(info: SessionEntry | null | undefined): string | 
 function MapContent() {
   const queryClient = useQueryClient();
   const { width, height } = useWindowDimensions();
-  /** Square map: prioritize size — up to ~88% of viewport height minus chrome. */
-  const mapSize = useMemo(() => {
-    const pad = 10;
-    const usableW = Math.max(0, width - pad * 2);
-    /** Use more vertical space so replay dots and labels are easier to read. */
-    const maxByH  = Math.max(320, Math.min(height * 0.92, height - 48));
-    const side    = Math.floor(Math.min(usableW, maxByH));
-    return Math.max(320, Math.min(side, 1700));
-  }, [width, height]);
 
   const {
     selectedSessionKey,
@@ -866,11 +864,14 @@ function MapContent() {
         const n = parseInt(ys, 10);
         return Number.isFinite(n) ? n : undefined;
       })();
+    const mergedStore = (fromStore ?? {}) as SessionEntry;
+    const mergedApi = (api ?? {}) as SessionEntry;
     return {
-      ...(fromStore ?? {}),
-      ...(api ?? {}),
+      ...mergedStore,
+      ...mergedApi,
       session_key: selectedSessionKey as number,
       year: yearNum,
+      round: mergedStore.round ?? mergedApi.round,
     } as SessionEntry;
   }, [selectedSessionKey, sessionDetail, selectedSessionInfo]);
 
@@ -951,6 +952,29 @@ function MapContent() {
     return best;
   }, [pickedSchedule, ergastMatchSource]);
 
+  const decodedMeeting =
+    ergastMatchSource?.meeting_key != null
+      ? decodeSyntheticMeetingKey(ergastMatchSource.meeting_key)
+      : null;
+
+  const schedulePickRound = useMemo(() => {
+    if (!pickedSchedule?.length || !pickedYear || !ergastMatchSource) return undefined;
+    const hit = ergastRoundForOpenF1Focus(
+      pickedSchedule,
+      pickedYear,
+      ergastMatchSource.location,
+      ergastMatchSource.country_name,
+    );
+    if (hit == null) return undefined;
+    const n = parseInt(hit.round, 10);
+    return Number.isFinite(n) ? n : undefined;
+  }, [pickedSchedule, pickedYear, ergastMatchSource]);
+
+  const decodedPickSession =
+    typeof selectedSessionKey === 'number'
+      ? decodeSyntheticSessionKey(selectedSessionKey)
+      : null;
+
   // Only when browsing “latest” — never blend “last race” with an explicit session pick (wrong year / Monaco, etc.)
   const { data: lastRaceReport } = useQuery({
     queryKey: ['race_report', 'current', 'last'],
@@ -959,10 +983,33 @@ function MapContent() {
     staleTime: 10 * 60 * 1000,
   });
 
-  // Resolved identifiers — explicit session: Ergast match only (no lastRace bleed-through)
-  const year     = pickedRace?.season   ?? (selectedSessionKey === 'latest' ? lastRaceReport?.race?.season : undefined);
-  const round    = pickedRace?.round    ?? (selectedSessionKey === 'latest' ? lastRaceReport?.race?.round : undefined);
-  const raceName = pickedRace?.raceName ?? (selectedSessionKey === 'latest' ? lastRaceReport?.race?.raceName : undefined);
+  // Resolved identifiers — prefer schedule row, then picker/store, synthetic decode, then “latest” Ergast last only
+  const year =
+    pickedRace?.season
+    ?? (resolvedPickedSession?.year != null
+      ? String(resolvedPickedSession.year)
+      : undefined)
+    ?? (selectedSessionInfo?.year != null
+      ? String(selectedSessionInfo.year)
+      : undefined)
+    ?? (decodedPickSession != null ? String(decodedPickSession.year) : undefined)
+    ?? (decodedMeeting != null ? String(decodedMeeting.year) : undefined)
+    ?? (selectedSessionKey === 'latest' ? lastRaceReport?.race?.season : undefined);
+
+  const round =
+    pickedRace?.round
+    ?? resolvedPickedSession?.round
+    ?? selectedSessionInfo?.round
+    ?? schedulePickRound
+    ?? decodedPickSession?.round
+    ?? decodedMeeting?.round
+    ?? (selectedSessionKey === 'latest' ? lastRaceReport?.race?.round : undefined);
+
+  const raceName =
+    pickedRace?.raceName
+    ?? resolvedPickedSession?.meeting_name
+    ?? selectedSessionInfo?.meeting_name
+    ?? (selectedSessionKey === 'latest' ? lastRaceReport?.race?.raceName : undefined);
   const sessionType =
     resolvedPickedSession?.session_name
     ?? (selectedSessionKey === 'latest' ? mapFocus?.session_name : undefined)
@@ -1142,6 +1189,41 @@ function MapContent() {
     trackMapActive && archiveReplay && canErgastArchive;
   const fetchErgastReplay =
     ergastReplayOk && (useHistoricalReplay || ergastArchiveOnLive);
+
+  const lapReplayLayout = useHistoricalReplay || ergastArchiveOnLive;
+  const isCompactWidth = width > 0 && width < 540;
+  /** Matches `s.content` paddingHorizontal (Spacing.sm × 2). */
+  const scrollContentPadX = Spacing.sm * 2;
+
+  const mapSize = useMemo(() => {
+    const innerColumnW = Math.max(0, width - scrollContentPadX);
+    const inset =
+      lapReplayLayout ? (isCompactWidth ? 0 : 6) : isCompactWidth ? 6 : 8;
+    const usableW = Math.max(0, innerColumnW - inset * 2);
+
+    const heightFrac = lapReplayLayout
+      ? isCompactWidth
+        ? 0.98
+        : 0.96
+      : isCompactWidth
+        ? 0.94
+        : 0.92;
+    const heightReserve = lapReplayLayout
+      ? isCompactWidth
+        ? 28
+        : 38
+      : isCompactWidth
+        ? 44
+        : 48;
+
+    const minSide = 320;
+    const maxByH = Math.max(
+      minSide,
+      Math.min(height * heightFrac, height - heightReserve),
+    );
+    const side = Math.floor(Math.min(usableW, maxByH));
+    return Math.max(minSide, Math.min(side, 1700));
+  }, [width, height, lapReplayLayout, isCompactWidth, scrollContentPadX]);
 
   // ── Historical circuit + laps (full-screen replay, or live tab “Lap replay”) ─
   const {

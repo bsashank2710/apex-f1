@@ -1,7 +1,11 @@
+import { useEffect } from 'react';
 import { Tabs } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Colors, FontSize } from '../../constants/theme';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRaceStore } from '../../store/raceStore';
+import { live } from '../../lib/api';
+import { isHistoricalOnly } from '../../lib/config';
 
 const TAB_ICONS: Record<string, string> = {
   index: '▶',
@@ -43,9 +47,35 @@ function AlertsIcon({ focused }: { focused: boolean }) {
   );
 }
 
+/** Warm OpenF1 timing caches on app load so RACE / TYRES / LAP LOG paint faster. */
+function LiveOpenF1Prefetch() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (isHistoricalOnly()) return;
+    void qc.prefetchQuery({
+      queryKey: ['map_session'],
+      queryFn: () => live.mapSession(),
+      staleTime: 4000,
+    });
+    void qc.prefetchQuery({
+      queryKey: ['race_snapshot', 'latest'],
+      queryFn: () => live.snapshot('latest'),
+      staleTime: 4000,
+    });
+    void qc.prefetchQuery({
+      queryKey: ['session'],
+      queryFn: () => live.session(),
+      staleTime: 15_000,
+    });
+  }, [qc]);
+  return null;
+}
+
 export default function TabLayout() {
   return (
-    <Tabs
+    <>
+      <LiveOpenF1Prefetch />
+      <Tabs
       screenOptions={({ route }) => ({
         tabBarStyle: styles.tabBar,
         tabBarActiveTintColor: Colors.primary,
@@ -123,6 +153,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }
 

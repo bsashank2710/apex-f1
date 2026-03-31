@@ -6,7 +6,7 @@ All endpoints accept session_key (defaults to "latest").
 import asyncio
 from collections import defaultdict
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Query
 from typing import Optional
 
@@ -16,6 +16,7 @@ from services import openf1
 from routers.telemetry import (
     _executor,
     _FASTF1_ROUND_LIVE_TTL_SEC,
+    _FASTF1_FINISHED_TTL_SEC,
     _get_fastf1_round_drivers_openf1_shaped_sync,
     _get_fastf1_round_laps_openf1_shaped_sync,
     _get_fastf1_round_race_control_sync,
@@ -433,7 +434,7 @@ def _fastf1_session_letter(kind: int) -> str:
     return {_KIND_RACE: "R", _KIND_QUALIFYING: "Q", _KIND_SPRINT: "S"}.get(kind, "R")
 
 
-async def _try_fastf1_laps(y: int, rnd: int, kind: int) -> list[dict]:
+async def _try_fastf1_laps(y: int, rnd: int, kind: int, ttl: int = _FASTF1_ROUND_LIVE_TTL_SEC) -> list[dict]:
     code = _fastf1_session_letter(kind)
     key = f"fastf1:shape:laps:{y}:{rnd}:{code}"
     hit = await _apex_cache.get(key)
@@ -455,11 +456,11 @@ async def _try_fastf1_laps(y: int, rnd: int, kind: int) -> list[dict]:
         data = []
     rows = data if isinstance(data, list) else []
     if rows:
-        await _apex_cache.set(key, rows, ttl=_FASTF1_ROUND_LIVE_TTL_SEC)
+        await _apex_cache.set(key, rows, ttl=ttl)
     return rows
 
 
-async def _try_fastf1_stints(y: int, rnd: int, kind: int) -> list[dict]:
+async def _try_fastf1_stints(y: int, rnd: int, kind: int, ttl: int = _FASTF1_ROUND_LIVE_TTL_SEC) -> list[dict]:
     code = _fastf1_session_letter(kind)
     key = f"fastf1:shape:stints:{y}:{rnd}:{code}"
     hit = await _apex_cache.get(key)
@@ -481,11 +482,11 @@ async def _try_fastf1_stints(y: int, rnd: int, kind: int) -> list[dict]:
         data = []
     rows = data if isinstance(data, list) else []
     if rows:
-        await _apex_cache.set(key, rows, ttl=_FASTF1_ROUND_LIVE_TTL_SEC)
+        await _apex_cache.set(key, rows, ttl=ttl)
     return rows
 
 
-async def _try_fastf1_drivers(y: int, rnd: int, kind: int) -> list[dict]:
+async def _try_fastf1_drivers(y: int, rnd: int, kind: int, ttl: int = _FASTF1_ROUND_LIVE_TTL_SEC) -> list[dict]:
     code = _fastf1_session_letter(kind)
     key = f"fastf1:shape:drivers:v2:{y}:{rnd}:{code}"
     hit = await _apex_cache.get(key)
@@ -507,7 +508,7 @@ async def _try_fastf1_drivers(y: int, rnd: int, kind: int) -> list[dict]:
         data = []
     rows = data if isinstance(data, list) else []
     if rows:
-        await _apex_cache.set(key, rows, ttl=_FASTF1_ROUND_LIVE_TTL_SEC)
+        await _apex_cache.set(key, rows, ttl=ttl)
     return rows
 
 
@@ -590,12 +591,28 @@ async def list_sessions(
                     "data_source": "ergast",
                 }
             ]
-        return await openf1.get_sessions(
+        sess_rows = await openf1.get_sessions(
             session_key=session_key,
             year=year,
             meeting_key=meeting_key,
             session_name=session_name,
         )
+        if not sess_rows:
+            return sess_rows
+        out_sess: list[dict] = []
+        for row in sess_rows:
+            r = dict(row)
+            yi = _infer_year_from_session_row(r)
+            mk = r.get("meeting_key")
+            if yi is not None and mk is not None:
+                try:
+                    er = await _ergast_round_for_openf1_meeting(yi, int(mk))
+                    if er is not None:
+                        r["round"] = er
+                except Exception:
+                    pass
+            out_sess.append(r)
+        return out_sess
 
     mk = meeting_key
     yr = year
@@ -618,6 +635,191 @@ async def list_sessions(
     )
 
 
+async def _ergast_calendar_bundle(year: int) -> tuple[dict[str, int], list[dict]]:
+    """Ergast schedule: date → round map, plus full race rows (for circuit matching)."""
+    ergast_date_map: dict[str, int] = {}
+    races: list[dict] = []
+    try:
+        races = await _ergast.get_schedule(year)
+        for r in races:
+            d = r.get("date")
+            rnd = r.get("round")
+            if d and rnd:
+                try:
+                    ergast_date_map[str(d)[:10]] = int(rnd)
+                except (TypeError, ValueError):
+                    pass
+    except Exception:
+        pass
+    return ergast_date_map, races
+
+
+async def _ergast_date_map_for_year(year: int) -> dict[str, int]:
+    d, _ = await _ergast_calendar_bundle(year)
+    return d
+
+
+def _try_ergast_round_from_dates(row: dict, ergast_date_map: dict[str, int]) -> int | None:
+    """Map OpenF1 meeting dates to an Ergast round; None if no calendar hit."""
+    date_end = str(row.get("date_end") or "")[:10]
+    date_start = str(row.get("date_start") or "")[:10]
+    for d in (date_end, date_start):
+        if d and d in ergast_date_map:
+            return ergast_date_map[d]
+    anchor = date_start or date_end
+    if not anchor:
+        return None
+    try:
+        a = date.fromisoformat(anchor)
+        b = date.fromisoformat(date_end or date_start)
+    except ValueError:
+        return None
+    if b < a:
+        a, b = b, a
+    max_days = min((b - a).days, 14)
+    for i in range(max_days + 1):
+        d = (a + timedelta(days=i)).isoformat()
+        if d in ergast_date_map:
+            return ergast_date_map[d]
+    return None
+
+
+def _norm_ergast_token(val: object) -> str:
+    return str(val or "").strip().lower()
+
+
+# OpenF1 `country_code` → extra tokens for Ergast locality / raceName matching
+# (Ergast uses full country names; short codes never appear in haystacks).
+_CC_EXTRA_NEEDLES: dict[str, tuple[str, ...]] = {
+    "aus": ("australia", "australian", "melbourne", "albert"),
+    "chn": ("china", "chinese", "shanghai"),
+    "brn": ("bahrain", "sakhir"),
+    "jpn": ("japan", "japanese", "suzuka"),
+    "usa": ("united states", "american", "miami", "austin", "vegas"),
+    "mex": ("mexico", "mexican"),
+    "bra": ("brazil", "brazilian"),
+    "qat": ("qatar", "losail"),
+    "are": ("emirates", "abu dhabi", "yas"),
+}
+
+
+def _ergast_round_by_circuit_match(row: dict, ergast_races: list[dict]) -> int | None:
+    """
+    When date matching fails (pre-season vs GP, TZ quirks), match OpenF1 meeting text
+    to Ergast Circuit / raceName. Fixes 2026+ calendars where sequential i+1 mapped
+    every GP to the same Ergast round as the Nth OpenF1 row.
+    """
+    needles: list[str] = []
+    for k in (
+        "circuit_short_name",
+        "location",
+        "country_name",
+        "meeting_name",
+        "meeting_official_name",
+    ):
+        v = _norm_ergast_token(row.get(k))
+        if len(v) >= 3:
+            needles.append(v)
+
+    cc = _norm_ergast_token(row.get("country_code"))
+    if len(cc) == 3 and cc in _CC_EXTRA_NEEDLES:
+        needles.extend(_CC_EXTRA_NEEDLES[cc])
+
+    if not needles:
+        return None
+
+    def race_haystacks(race: dict) -> list[str]:
+        c = race.get("Circuit") or {}
+        loc = c.get("Location") or {}
+        parts = [
+            _norm_ergast_token(c.get("circuitId")),
+            _norm_ergast_token(c.get("circuitName")),
+            _norm_ergast_token(loc.get("locality")),
+            _norm_ergast_token(loc.get("country")),
+            _norm_ergast_token(race.get("raceName")),
+        ]
+        return [p for p in parts if len(p) >= 3]
+
+    for race in ergast_races:
+        stacks = race_haystacks(race)
+        for n in needles:
+            compact_n = n.replace(" ", "")
+            for h in stacks:
+                compact_h = h.replace(" ", "")
+                if n in h or h in n or compact_n in compact_h or compact_h in compact_n:
+                    try:
+                        return int(race.get("round", 0))
+                    except (TypeError, ValueError):
+                        return None
+    return None
+
+
+def _resolve_ergast_round_for_openf1_meeting(
+    row: dict,
+    ergast_date_map: dict[str, int],
+    ergast_races: list[dict],
+    *,
+    sequential_fallback: int | None,
+) -> int | None:
+    if row.get("ergast_round") is not None:
+        try:
+            return int(row["ergast_round"])
+        except (TypeError, ValueError):
+            pass
+    r = _try_ergast_round_from_dates(row, ergast_date_map)
+    if r is not None:
+        return r
+    r = _ergast_round_by_circuit_match(row, ergast_races)
+    if r is not None:
+        return r
+    if not ergast_races:
+        return sequential_fallback
+    return None
+
+
+async def _ergast_round_for_openf1_meeting(year: int, meeting_key: int) -> int | None:
+    """
+    Official Ergast round for an OpenF1 meeting_key + season year.
+    Used to fix client race reports when OpenF1's own `round` field disagrees with the calendar.
+    """
+    meetings = await openf1.get_meetings(year=year)
+    if not meetings:
+        return None
+    ergast_date_map, ergast_races = await _ergast_calendar_bundle(year)
+    mki = int(meeting_key)
+    for i, r in enumerate(meetings):
+        try:
+            mk = int(r.get("meeting_key", 0))
+        except (TypeError, ValueError):
+            continue
+        if mk != mki:
+            continue
+        row = dict(r)
+        return _resolve_ergast_round_for_openf1_meeting(
+            row,
+            ergast_date_map,
+            ergast_races,
+            sequential_fallback=i + 1,
+        )
+    return None
+
+
+def _infer_year_from_session_row(row: dict) -> int | None:
+    y = row.get("year")
+    if y is not None:
+        try:
+            return int(y)
+        except (TypeError, ValueError):
+            pass
+    ds = str(row.get("date_start") or row.get("date_end") or "")[:10]
+    if len(ds) >= 4:
+        try:
+            return int(ds[:4])
+        except ValueError:
+            pass
+    return None
+
+
 @router.get("/meetings")
 async def list_meetings(
     year: Optional[int] = Query(None),
@@ -625,11 +827,23 @@ async def list_meetings(
 ):
     rows = await openf1.get_meetings(year=year, country_name=country_name)
     if rows:
+        ergast_date_map: dict[str, int] = {}
+        ergast_races: list[dict] = []
+        if year is not None:
+            ergast_date_map, ergast_races = await _ergast_calendar_bundle(year)
+
         out = []
         for i, r in enumerate(rows):
             row = dict(r)
             if row.get("ergast_round") is None:
-                row["ergast_round"] = i + 1
+                resolved = _resolve_ergast_round_for_openf1_meeting(
+                    row,
+                    ergast_date_map,
+                    ergast_races,
+                    sequential_fallback=i + 1,
+                )
+                if resolved is not None:
+                    row["ergast_round"] = resolved
             out.append(row)
         return out
     if year is None:

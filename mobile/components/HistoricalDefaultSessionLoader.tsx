@@ -16,22 +16,28 @@ import { useRaceStore } from '../store/raceStore';
 export function HistoricalDefaultSessionLoader() {
   const queryClient = useQueryClient();
   const selectedSessionKey = useRaceStore((s) => s.selectedSessionKey);
+  const historicalBrowseYear = useRaceStore((s) => s.historicalBrowseYear);
   const setSelectedSessionKey = useRaceStore((s) => s.setSelectedSessionKey);
   const setSelectedSessionInfo = useRaceStore((s) => s.setSelectedSessionInfo);
+
+  const finishedDefaultYearArg =
+    historicalBrowseYear != null && historicalBrowseYear !== ''
+      ? historicalBrowseYear
+      : undefined;
 
   /** Start loading default session before the rest of the UI mounts tabs — fewer waterfalls. */
   useEffect(() => {
     if (!isHistoricalOnly()) return;
     queryClient.prefetchQuery({
-      queryKey: [...finishedDefaultSessionQueryKey()],
+      queryKey: [...finishedDefaultSessionQueryKey(null)],
       queryFn: () => history.finishedDefaultSession(),
       staleTime: FINISHED_DEFAULT_SESSION_STALE_MS,
     });
   }, [queryClient]);
 
   const { data, isError } = useQuery({
-    queryKey: [...finishedDefaultSessionQueryKey()],
-    queryFn: () => history.finishedDefaultSession(),
+    queryKey: [...finishedDefaultSessionQueryKey(historicalBrowseYear)],
+    queryFn: () => history.finishedDefaultSession(finishedDefaultYearArg),
     enabled: isHistoricalOnly() && selectedSessionKey === 'pending',
     staleTime: FINISHED_DEFAULT_SESSION_STALE_MS,
     retry: 2,

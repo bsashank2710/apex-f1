@@ -2,13 +2,16 @@
  * Shared React Query key for GET /history/finished_default_session.
  * Includes the calendar day (UTC) so stale “last race” cache cannot flash an old GP
  * (e.g. Japan) and then settle on a different round (e.g. China) after refetch.
+ *
+ * `seasonFilter` — when set (e.g. user picked a year in the session sheet), fetch that
+ * season’s last finished race instead of the global default.
  */
-export function finishedDefaultSessionQueryKey(): readonly [
-  'history',
-  'finished_default_session',
-  string,
-] {
-  return ['history', 'finished_default_session', new Date().toISOString().slice(0, 10)];
+export function finishedDefaultSessionQueryKey(
+  seasonFilter?: string | null,
+): readonly ['history', 'finished_default_session', string, string] {
+  const day = new Date().toISOString().slice(0, 10);
+  const y = seasonFilter?.trim();
+  return ['history', 'finished_default_session', day, y && y.length ? y : 'default'];
 }
 
 /**

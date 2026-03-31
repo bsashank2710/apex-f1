@@ -10,8 +10,11 @@ import {
 } from 'react-native';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { live, history } from '../lib/api';
-import type { Session } from '../lib/api';
-import { pickRaceHubAnalysisTarget } from '../lib/openF1ErgastMatch';
+import type { Meeting, Session, SessionEntry } from '../lib/api';
+import {
+  ergastRoundForOpenF1Focus,
+  pickRaceHubAnalysisTarget,
+} from '../lib/openF1ErgastMatch';
 import type { Driver, RaceControlMsg, Weather } from '../lib/api';
 import { Colors, Spacing, FontSize, Radius } from '../constants/theme';
 import { useRaceStore } from '../store/raceStore';
@@ -25,6 +28,7 @@ import {
   FINISHED_DEFAULT_SESSION_STALE_MS,
 } from '../lib/finishedSessionQuery';
 import { isHistoricalOnly } from '../lib/config';
+import { sessionIsLive } from '../lib/sessionLive';
 
 // ── Tyre compound colours ──────────────────────────────────────────────────────
 
@@ -202,17 +206,23 @@ function LiveLeaderboard({
 }: {
   sessionKey: number | 'latest';
   /** Prefer map_session row so the banner is not “Unknown Circuit” while /session lags. */
-  mapBannerSource?: Session | null;
+  mapBannerSource?: Session | SessionEntry | null;
 }) {
-  const { data, isLoading, refetch, isRefetching, error } = useQuery({
+  const { data, isPending, refetch, isRefetching, error } = useQuery({
     queryKey: ['race_snapshot', sessionKey],
     queryFn: () => live.snapshot(sessionKey),
     refetchInterval: 5000,
+    placeholderData: keepPreviousData,
   });
 
+  /**
+   * GET /live/session is the *global* latest row — never mix it with a specific session_key
+   * or the banner shows the wrong circuit (e.g. Japan while you picked Melbourne).
+   */
   const { data: session } = useQuery({
     queryKey: ['session'],
     queryFn: () => live.session(),
+    enabled: sessionKey === 'latest',
     refetchInterval: 15000,
   });
 
@@ -232,7 +242,7 @@ function LiveLeaderboard({
     []
   );
 
-  if (isLoading) {
+  if (isPending && data === undefined) {
     return (
       <View style={styles.container}>
         <LeaderboardSkeleton rows={20} />
@@ -317,17 +327,13 @@ function LiveLeaderboard({
 // ── Smart router: live vs historical ──────────────────────────────────────────
 
 /**
- * Only true **live** sessions — not `recent` (just finished). After the flag, OpenF1
- * snapshots often lose gaps/tyres while the hub would still show a broken “LIVE” board;
- * we route that to Ergast RaceAnalysis instead.
+ * RACE hub: OpenF1 timing tower **only** while the session window is actually active
+ * (`sessionIsLive` from date_start/date_end + status). After chequered, always land on
+ * Ergast results — do not use map_phase=recent or a pre–map_session “latest” snapshot
+ * (that was flashing the tower first, then replacing it with the results page).
  */
-function mapPhaseIsActivelyLive(phase: string | undefined): boolean {
-  return phase === 'live';
-}
-
 function RaceHubOpenF1Driven() {
   const historicalHub = isHistoricalOnly();
-  /** Finished-race mode never uses OpenF1 map_session — waiting on it left the hub on skeletons forever. */
   const { data: mapFocus, isFetched: mapFetched } = useQuery({
     queryKey: ['map_session'],
     queryFn: () => live.mapSession(),
@@ -336,45 +342,18 @@ function RaceHubOpenF1Driven() {
     placeholderData: keepPreviousData,
   });
 
-  const mapReady = historicalHub || mapFetched;
-
-  const mapDrivesTiming =
-    !!mapFocus
-    && mapFocus.session_key != null
-    && mapPhaseIsActivelyLive(mapFocus.map_phase);
-
-  const snapshotKey: number | 'latest' = mapDrivesTiming
-    ? (mapFocus!.session_key as number)
-    : 'latest';
-
-  /**
-   * Use map_session only for live vs historical — not raw GET /session.
-   * /session often disagrees with map_session (different meeting / “latest” row),
-   * which caused a flash of Japan timing then Ergast “last GP” (e.g. China).
-   */
-  const showLiveBoard = mapDrivesTiming;
-
   const scheduleYear =
     mapFocus?.year != null && !Number.isNaN(Number(mapFocus.year))
       ? String(mapFocus.year)
       : String(new Date().getFullYear());
 
-  const {
-    data: schedule,
-    isFetched: scheduleFetched,
-    isError: scheduleError,
-  } = useQuery({
+  const { data: schedule } = useQuery({
     queryKey: ['schedule', scheduleYear],
     queryFn: () => history.schedule(scheduleYear),
-    enabled: mapReady,
+    enabled: !historicalHub,
     staleTime: 60 * 60 * 1000,
   });
 
-  /**
-   * Same “last completed GP” as GET /history/finished_default_session (session picker default).
-   * OpenF1 map focus can still point at an old weekend — do not derive Ergast year/round from it
-   * for this screen or you get stale races (e.g. China) instead of the real latest (e.g. Japan).
-   */
   const {
     data: finishedDefault,
     isFetched: finishedDefaultFetched,
@@ -382,9 +361,16 @@ function RaceHubOpenF1Driven() {
   } = useQuery({
     queryKey: [...finishedDefaultSessionQueryKey()],
     queryFn: () => history.finishedDefaultSession(),
-    enabled: mapReady && !showLiveBoard,
+    enabled: !historicalHub,
     staleTime: FINISHED_DEFAULT_SESSION_STALE_MS,
   });
+
+  const showLiveBoard =
+    !historicalHub
+    && mapFetched
+    && mapFocus != null
+    && mapFocus.session_key != null
+    && sessionIsLive(mapFocus);
 
   const analysisTarget = useMemo(() => {
     if (finishedDefault) {
@@ -396,18 +382,10 @@ function RaceHubOpenF1Driven() {
     return null;
   }, [finishedDefault, finishedDefaultError, mapFocus, schedule, scheduleYear]);
 
-  const analysisReady =
-    showLiveBoard
-    || !mapReady
-    || scheduleFetched
-    || scheduleError
-    || (!mapFocus?.location && !mapFocus?.country_name && !mapFocus?.circuit_short_name);
-
-  const finishedDefaultResolved = finishedDefaultFetched || finishedDefaultError;
   const analysisDataReady =
-    showLiveBoard || (finishedDefaultResolved && analysisTarget != null);
+    (finishedDefaultFetched || finishedDefaultError) && analysisTarget != null;
 
-  if (!mapReady || !analysisReady) {
+  if (!historicalHub && !mapFetched) {
     return (
       <View style={styles.container}>
         <LeaderboardSkeleton rows={10} />
@@ -417,7 +395,10 @@ function RaceHubOpenF1Driven() {
 
   if (showLiveBoard) {
     return (
-      <LiveLeaderboard sessionKey={snapshotKey} mapBannerSource={mapFocus ?? undefined} />
+      <LiveLeaderboard
+        sessionKey={mapFocus!.session_key as number}
+        mapBannerSource={mapFocus ?? undefined}
+      />
     );
   }
 
@@ -429,16 +410,152 @@ function RaceHubOpenF1Driven() {
     );
   }
 
-  return <RaceAnalysis year={analysisTarget.year} round={analysisTarget.round} />;
+  return (
+    <RaceAnalysis
+      year={analysisTarget.year}
+      round={analysisTarget.round}
+      cacheScope="hub-openf1-default"
+    />
+  );
+}
+
+function findMeetingForSessionRow(
+  meetings: Meeting[] | undefined,
+  row: SessionEntry | undefined,
+): Meeting | undefined {
+  if (!meetings?.length || !row) return undefined;
+  const mk = row.meeting_key;
+  const byKey = meetings.find((m) => Number(m.meeting_key) === Number(mk));
+  if (byKey) return byKey;
+  const rc = (row.circuit_short_name || '').trim().toLowerCase();
+  const loc = (row.location || '').trim().toLowerCase();
+  if (!rc && !loc) return undefined;
+  return meetings.find((m) => {
+    const mc = (m.circuit_short_name || '').trim().toLowerCase();
+    const cn = (m.country_name || '').trim().toLowerCase();
+    if (rc && mc && (rc === mc || rc.includes(mc) || mc.includes(rc))) return true;
+    if (loc && cn && (loc === cn || loc.includes(cn))) return true;
+    return false;
+  });
+}
+
+/** After this grace period post-chequered, prefer Ergast if OpenF1 snapshot is empty. */
+function sessionEndedForErgastFallback(row: SessionEntry | undefined): boolean {
+  if (!row?.date_end) return false;
+  const en = Date.parse(row.date_end);
+  if (!Number.isFinite(en)) return false;
+  return Date.now() > en + 2 * 60 * 60 * 1000;
+}
+
+/**
+ * Picked OpenF1 session_key: use **snapshot(session_key)** for LIVE tab (always the right meeting).
+ * Ergast RaceAnalysis only when the session is long finished and OpenF1 timing is gone.
+ */
+function RaceHubSessionResolved({ sessionKey }: { sessionKey: number }) {
+  const { data: sessRows, isLoading: sessLoading } = useQuery({
+    queryKey: ['sessions', 'by_key', sessionKey],
+    queryFn: () => live.sessions(undefined, undefined, undefined, sessionKey),
+    enabled: sessionKey > 0,
+    staleTime: 60_000,
+  });
+  const row = sessRows?.[0];
+  const yearNum =
+    row?.year
+    ?? (row?.date_start ? new Date(row.date_start).getUTCFullYear() : undefined)
+    ?? new Date().getFullYear();
+
+  const { data: meetings, isLoading: meetLoading } = useQuery({
+    queryKey: ['meetings', yearNum],
+    queryFn: () => live.meetings(yearNum),
+    enabled: Number.isFinite(yearNum),
+    staleTime: 5 * 60_000,
+  });
+
+  const meeting = findMeetingForSessionRow(meetings, row);
+  const yearStr = String(row?.year ?? yearNum);
+
+  const { data: scheduleForRound } = useQuery({
+    queryKey: ['schedule', yearStr],
+    queryFn: () => history.schedule(yearStr),
+    enabled: sessionKey > 0 && Number.isFinite(yearNum),
+    staleTime: 60 * 60 * 1000,
+  });
+
+  const round = useMemo(() => {
+    const mr = meeting?.ergast_round;
+    if (mr != null) return mr;
+    const rw = row?.round;
+    if (rw != null) return rw;
+    const hit = ergastRoundForOpenF1Focus(
+      scheduleForRound,
+      yearStr,
+      row?.location,
+      row?.country_name,
+    );
+    if (hit == null) return undefined;
+    const n = parseInt(hit.round, 10);
+    return Number.isFinite(n) ? n : undefined;
+  }, [meeting, row, scheduleForRound, yearStr]);
+
+  const {
+    data: snap,
+    isLoading: snapLoading,
+    isFetched: snapFetched,
+  } = useQuery({
+    queryKey: ['race_snapshot', sessionKey],
+    queryFn: () => live.snapshot(sessionKey),
+    enabled: sessionKey > 0,
+    staleTime: 4000,
+  });
+
+  const snapshotHasDrivers = (snap?.drivers?.length ?? 0) > 0;
+  const useErgastFinished =
+    snapFetched
+    && !snapLoading
+    && !snapshotHasDrivers
+    && sessionEndedForErgastFallback(row)
+    && row != null
+    && round != null;
+
+  if (sessLoading || meetLoading) {
+    return (
+      <View style={styles.container}>
+        <LeaderboardSkeleton rows={10} />
+      </View>
+    );
+  }
+
+  if (useErgastFinished) {
+    return (
+      <RaceAnalysis
+        year={yearStr}
+        round={String(round)}
+        cacheScope={sessionKey}
+      />
+    );
+  }
+
+  return (
+    <LiveLeaderboard
+      sessionKey={sessionKey}
+      mapBannerSource={row ?? undefined}
+    />
+  );
 }
 
 function RaceHubContent() {
   const selectedSessionKey = useRaceStore((s) => s.selectedSessionKey);
+  const historicalBrowseYear = useRaceStore((s) => s.historicalBrowseYear);
+
+  const finishedDefaultYearArg =
+    historicalBrowseYear != null && historicalBrowseYear !== ''
+      ? historicalBrowseYear
+      : undefined;
 
   /** Same cache as HistoricalDefaultSessionLoader — authoritative year/round vs decode drift. */
   const { data: finishedDefaultApi } = useQuery({
-    queryKey: [...finishedDefaultSessionQueryKey()],
-    queryFn: () => history.finishedDefaultSession(),
+    queryKey: [...finishedDefaultSessionQueryKey(historicalBrowseYear)],
+    queryFn: () => history.finishedDefaultSession(finishedDefaultYearArg),
     enabled:
       isHistoricalOnly()
       && (selectedSessionKey === 'pending'
@@ -452,6 +569,7 @@ function RaceHubContent() {
         <RaceAnalysis
           year={String(finishedDefaultApi.year)}
           round={String(finishedDefaultApi.round)}
+          cacheScope={`pending-${finishedDefaultApi.session_key}`}
         />
       );
     }
@@ -470,11 +588,24 @@ function RaceHubContent() {
           <RaceAnalysis
             year={String(finishedDefaultApi.year)}
             round={String(finishedDefaultApi.round)}
+            cacheScope={selectedSessionKey}
           />
         );
       }
-      return <RaceAnalysis year={String(dec.year)} round={String(dec.round)} />;
+      return (
+        <RaceAnalysis
+          year={String(dec.year)}
+          round={String(dec.round)}
+          cacheScope={selectedSessionKey}
+        />
+      );
     }
+  }
+
+  // User explicitly picked a specific session — always resolve year/round from API + meetings
+  // (Zustand round/year can disagree with OpenF1; React Query cache must key on session_key).
+  if (typeof selectedSessionKey === 'number' && selectedSessionKey > 0) {
+    return <RaceHubSessionResolved sessionKey={selectedSessionKey} />;
   }
 
   return <RaceHubOpenF1Driven />;

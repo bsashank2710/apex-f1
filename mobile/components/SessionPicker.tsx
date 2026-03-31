@@ -60,6 +60,7 @@ export function SessionPicker({ expandPill = false }: { expandPill?: boolean }) 
   const selectedSessionInfo = useRaceStore((s) => s.selectedSessionInfo);
   const setSelectedSessionKey = useRaceStore((s) => s.setSelectedSessionKey);
   const setSelectedSessionInfo = useRaceStore((s) => s.setSelectedSessionInfo);
+  const setHistoricalBrowseYear = useRaceStore((s) => s.setHistoricalBrowseYear);
   const { mapFocus } = useOpenF1LiveContext();
 
   const { data: meetings, isLoading: loadingMeetings } = useQuery({
@@ -96,26 +97,40 @@ export function SessionPicker({ expandPill = false }: { expandPill?: boolean }) 
       const y = Number(year);
       const fromMk = decodeSyntheticMeetingKey(s.meeting_key);
       const ergR = selectedMeeting?.ergast_round;
+      const meetingYear = selectedMeeting?.year;
+      /**
+       * Ergast year/round must drive RaceAnalysis (history.raceReport). OpenF1 `s.round`
+       * is not always the same as the official calendar round — prefer the meeting row
+       * from /live/meetings (ergast_round) so Melbourne ≠ Japan.
+       */
       const enriched: SessionEntry = {
         ...s,
-        year: s.year ?? fromMk?.year ?? (!Number.isNaN(y) ? y : s.year),
-        round: s.round ?? ergR ?? fromMk?.round,
+        year: meetingYear ?? s.year ?? fromMk?.year ?? (!Number.isNaN(y) ? y : s.year),
+        round: ergR ?? s.round ?? fromMk?.round,
         meeting_name: s.meeting_name ?? selectedMeeting?.meeting_name,
       };
       setSelectedSessionKey(s.session_key);
       setSelectedSessionInfo(enriched);
+      setHistoricalBrowseYear(null);
       setOpen(false);
       setSelectedMeeting(null);
     },
-    [setSelectedSessionKey, setSelectedSessionInfo, year, selectedMeeting]
+    [
+      setSelectedSessionKey,
+      setSelectedSessionInfo,
+      setHistoricalBrowseYear,
+      year,
+      selectedMeeting,
+    ]
   );
 
   const handleSelectLatest = useCallback(() => {
     setSelectedSessionKey('latest');
     setSelectedSessionInfo(null);
+    setHistoricalBrowseYear(null);
     setOpen(false);
     setSelectedMeeting(null);
-  }, [setSelectedSessionKey, setSelectedSessionInfo]);
+  }, [setSelectedSessionKey, setSelectedSessionInfo, setHistoricalBrowseYear]);
 
   const sessionLabel = () => {
     if (selectedSessionKey === 'pending') {
@@ -198,7 +213,31 @@ export function SessionPicker({ expandPill = false }: { expandPill?: boolean }) 
               <TouchableOpacity
                 key={y}
                 style={[styles.yearChip, year === y && styles.yearChipActive]}
-                onPress={() => { setYear(y); setSelectedMeeting(null); }}
+                onPress={() => {
+                  setYear(y);
+                  setSelectedMeeting(null);
+                  if (isHistoricalOnly()) {
+                    const sameYearAsPick =
+                      selectedSessionInfo?.year != null
+                      && String(selectedSessionInfo.year) === y;
+                    if (!sameYearAsPick) {
+                      setHistoricalBrowseYear(y);
+                      setSelectedSessionKey('pending');
+                      setSelectedSessionInfo(null);
+                    }
+                    return;
+                  }
+                  const sy = selectedSessionInfo?.year;
+                  if (
+                    sy != null
+                    && String(sy) !== y
+                    && typeof selectedSessionKey === 'number'
+                    && selectedSessionKey > 0
+                  ) {
+                    setSelectedSessionKey('latest');
+                    setSelectedSessionInfo(null);
+                  }
+                }}
               >
                 <Text style={[styles.yearText, year === y && styles.yearTextActive]}>{y}</Text>
               </TouchableOpacity>

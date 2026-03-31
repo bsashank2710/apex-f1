@@ -35,6 +35,13 @@ interface RaceState {
   selectedSessionInfo: SessionEntry | null;
   setSelectedSessionInfo: (info: SessionEntry | null) => void;
 
+  /**
+   * Season year last chosen in the session picker (historical mode). Drives
+   * GET /history/finished_default_session?year=… when selection is reset to pending.
+   */
+  historicalBrowseYear: string | null;
+  setHistoricalBrowseYear: (y: string | null) => void;
+
   // Drivers
   drivers: Driver[];
   setDrivers: (d: Driver[]) => void;
@@ -79,6 +86,9 @@ export const useRaceStore = create<RaceState>((set, get) => ({
 
   selectedSessionInfo: null,
   setSelectedSessionInfo: (selectedSessionInfo) => set({ selectedSessionInfo }),
+
+  historicalBrowseYear: null,
+  setHistoricalBrowseYear: (historicalBrowseYear) => set({ historicalBrowseYear }),
 
   drivers: [],
   setDrivers: (drivers) => set({ drivers }),

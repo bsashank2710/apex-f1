@@ -64,40 +64,17 @@ async def _warmup_popular_cache() -> None:
         _warmup_log.warning("Warmup failed (non-fatal): %s", e)
 
 
-async def _warmup_last_finished_default() -> None:
-    """
-    Prime FastF1 + Ergast for the **latest completed GP** (same target as
-    GET /history/finished_default_session). The generic warmup above uses the *next*
-    calendar round — finished-race mode hits a different round, so we warm both.
-    """
-    if os.getenv("DISABLE_STARTUP_WARMUP", "").lower() in ("1", "true", "yes"):
-        return
+async def _warmup_finished_race(year: int, rnd: int, event_name: str) -> None:
+    """Pre-warm FastF1 + Ergast + circuit map for a single finished race."""
+    from routers.live import _try_fastf1_drivers, _try_fastf1_laps, _try_fastf1_stints
+    from routers.telemetry import _CIRCUIT_MAP_TTL_SEC, _FASTF1_FINISHED_TTL_SEC, _get_circuit_map_sync
+
     try:
-        from routers.history import _last_finished_gp_globally
-        from routers.telemetry import _CIRCUIT_MAP_TTL_SEC, _get_circuit_map_sync
-
-        race = await _last_finished_gp_globally()
-        if not race:
-            _warmup_log.info("Warmup (finished default): no completed GP")
-            return
-        year = int(race.get("season") or date.today().year)
-        rnd_s = str(race.get("round", "1"))
-        rnd = int(float(rnd_s)) if rnd_s.replace(".", "", 1).isdigit() else 1
-        event_name = (race.get("raceName") or "") or ""
-
         data = await asyncio.to_thread(_get_circuit_map_sync, year, rnd, event_name)
         path = data.get("path") or []
         if isinstance(path, list) and len(path) >= 16:
             cache_key = f"telemetry:circuit_map:{year}:{rnd}:{event_name or '_'}"
             await cache.set(cache_key, data, ttl=_CIRCUIT_MAP_TTL_SEC)
-            _warmup_log.info("Warmup (finished default): circuit_map ready for %s R%s", year, rnd)
-        else:
-            _warmup_log.warning(
-                "Warmup (finished default): circuit path short (%s pts) for %s R%s",
-                len(path) if isinstance(path, list) else 0,
-                year,
-                rnd,
-            )
 
         await asyncio.gather(
             ergast.get_qualifying_results(year, rnd),
@@ -105,27 +82,59 @@ async def _warmup_last_finished_default() -> None:
             return_exceptions=True,
         )
 
-        # Pre-warm the slow FastF1 paths (drivers / laps / stints) so the first mobile
-        # request hits Redis/memory instead of triggering a 60-180 s download.
-        from routers.live import _try_fastf1_drivers, _try_fastf1_laps, _try_fastf1_stints
-        _warmup_log.info("Warmup (finished default): pre-caching FastF1 drivers/laps/stints for %s R%s …", year, rnd)
         drivers, laps, stints = await asyncio.gather(
-            _try_fastf1_drivers(year, rnd, 1),   # kind 1 = Race
-            _try_fastf1_laps(year, rnd, 1),
-            _try_fastf1_stints(year, rnd, 1),
+            _try_fastf1_drivers(year, rnd, 1, ttl=_FASTF1_FINISHED_TTL_SEC),
+            _try_fastf1_laps(year, rnd, 1, ttl=_FASTF1_FINISHED_TTL_SEC),
+            _try_fastf1_stints(year, rnd, 1, ttl=_FASTF1_FINISHED_TTL_SEC),
             return_exceptions=True,
         )
         d_ok = isinstance(drivers, list) and len(drivers) > 0
         l_ok = isinstance(laps, list) and len(laps) > 0
         s_ok = isinstance(stints, list) and len(stints) > 0
         _warmup_log.info(
-            "Warmup (finished default): FastF1 ready — drivers=%s laps=%s stints=%s",
+            "Warmup R%s %s %s: drivers=%s laps=%s stints=%s",
+            rnd, year, event_name,
             len(drivers) if d_ok else "EMPTY",
             len(laps) if l_ok else "EMPTY",
             len(stints) if s_ok else "EMPTY",
         )
     except Exception as e:
-        _warmup_log.warning("Warmup (finished default) failed (non-fatal): %s", e)
+        _warmup_log.warning("Warmup R%s %s failed (non-fatal): %s", rnd, year, e)
+
+
+async def _warmup_last_finished_default() -> None:
+    """
+    Prime FastF1 + Ergast for **all completed GPs this season** so every finished
+    race loads instantly from Redis instead of triggering a 60-180 s FastF1 download.
+    Finished race data is immutable — cached for 7 days.
+    """
+    if os.getenv("DISABLE_STARTUP_WARMUP", "").lower() in ("1", "true", "yes"):
+        return
+    try:
+        from services import ergast as _ergast_svc
+
+        cy = date.today().year
+        today_s = date.today().isoformat()
+        races = await _ergast_svc.get_schedule(str(cy))
+        finished = [r for r in races if (r.get("date") or "") <= today_s]
+        if not finished:
+            _warmup_log.info("Warmup (finished): no completed GPs yet this season")
+            return
+
+        _warmup_log.info("Warmup (finished): pre-caching %d completed race(s) for %s …", len(finished), cy)
+        # Warm sequentially to avoid hammering FastF1 CDN in parallel
+        for race in finished:
+            year = int(race.get("season") or cy)
+            rnd_s = str(race.get("round", "1"))
+            rnd = int(float(rnd_s)) if rnd_s.replace(".", "", 1).isdigit() else 1
+            event_name = (race.get("raceName") or "") or ""
+            await _warmup_finished_race(year, rnd, event_name)
+            # Yield so /health and API requests stay responsive during long FastF1 warmups.
+            await asyncio.sleep(0.05)
+
+        _warmup_log.info("Warmup (finished): all %d race(s) cached", len(finished))
+    except Exception as e:
+        _warmup_log.warning("Warmup (finished) failed (non-fatal): %s", e)
 
 
 @asynccontextmanager
@@ -169,6 +178,10 @@ _LOCAL_EXPO_WEB_ORIGINS = (
     "http://127.0.0.1:8082",
     "http://localhost:8083",
     "http://127.0.0.1:8083",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
     "http://localhost:19006",
     "http://127.0.0.1:19006",
     "http://localhost:19000",

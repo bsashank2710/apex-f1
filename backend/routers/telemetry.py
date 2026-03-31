@@ -19,6 +19,8 @@ _CIRCUIT_MAP_TTL_SEC = int(os.getenv("CIRCUIT_MAP_CACHE_TTL", str(14 * 24 * 3600
 # FastF1 session data (drivers/laps/stints) for a completed race never changes.
 # Default 6 h; override with FASTF1_LIVE_CACHE_TTL env var (e.g. "180" for live-session dev).
 _FASTF1_ROUND_LIVE_TTL_SEC = int(os.getenv("FASTF1_LIVE_CACHE_TTL", str(6 * 3600)))
+# Finished-race data is immutable — cache for 7 days so re-parsing never re-triggers.
+_FASTF1_FINISHED_TTL_SEC = int(os.getenv("FASTF1_FINISHED_CACHE_TTL", str(7 * 24 * 3600)))
 
 # FastF1 is CPU-bound; run in thread pool to avoid blocking the event loop
 import concurrent.futures

@@ -3,9 +3,9 @@
  * GET /session vs GET /map_session (FP1 vs race, between-session gaps). Live Map and
  * Race Hub already follow map_session; lap log and stints must use the same key.
  *
- * For "latest", we **do not** fall back to GET /session while map_session is loading —
- * that pointed Tyres / Lap Log / Telemetry at the wrong meeting (then flipped when
- * map_session arrived), which felt like stale data and empty tables.
+ * For "latest", we **start** with aggregate `session_key=latest` immediately so TYRES /
+ * LAP LOG / DRIVERS fetch in parallel with map_session. When map_session returns, we
+ * switch to `map_focus.session_key` when present so timing matches the map hub.
  *
  * Historical mode: map_session is not polled. "latest" resolves via
  * GET /history/finished_default_session. If that fails or returns no session_key, we fall back
@@ -28,6 +28,7 @@ export type OpenF1EffectiveKey = number | 'latest' | null;
 export function useOpenF1LiveContext() {
   const selectedSessionKey = useRaceStore((s) => s.selectedSessionKey);
   const selectedSessionInfo = useRaceStore((s) => s.selectedSessionInfo);
+  const historicalBrowseYear = useRaceStore((s) => s.historicalBrowseYear);
 
   const isPending = selectedSessionKey === 'pending';
   const pollLatest =
@@ -58,13 +59,18 @@ export function useOpenF1LiveContext() {
     staleTime: 15_000,
   });
 
+  const finishedDefaultYearArg =
+    historicalBrowseYear != null && historicalBrowseYear !== ''
+      ? historicalBrowseYear
+      : undefined;
+
   const {
     data: finishedDefaultFeed,
     isFetched: finishedDefaultFetched,
     isError: finishedDefaultError,
   } = useQuery({
-    queryKey: [...finishedDefaultSessionQueryKey()],
-    queryFn: () => history.finishedDefaultSession(),
+    queryKey: [...finishedDefaultSessionQueryKey(historicalBrowseYear)],
+    queryFn: () => history.finishedDefaultSession(finishedDefaultYearArg),
     enabled:
       isHistoricalOnly()
       && (selectedSessionKey === 'latest' || selectedSessionKey === 'pending'),
@@ -109,9 +115,10 @@ export function useOpenF1LiveContext() {
       return selectedSessionKey;
     }
     if (pollLatest) {
-      return mapSessionFetched
-        ? (mapFocus?.session_key != null ? mapFocus.session_key : 'latest')
-        : null;
+      if (mapFocus?.session_key != null) {
+        return mapFocus.session_key;
+      }
+      return 'latest';
     }
     if (finishedDefaultFeed?.session_key != null) {
       return finishedDefaultFeed.session_key;
@@ -124,7 +131,6 @@ export function useOpenF1LiveContext() {
     isPending,
     selectedSessionKey,
     pollLatest,
-    mapSessionFetched,
     mapFocus?.session_key,
     finishedDefaultFeed?.session_key,
     fallbackSessionKeyFromReport,

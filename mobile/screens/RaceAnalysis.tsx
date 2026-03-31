@@ -766,17 +766,21 @@ function RaceHeader({
 export default function RaceAnalysis({
   year = 'current',
   round = 'last',
+  /** Bust React Query cache when the same year/round could mean a different picked session */
+  cacheScope,
 }: {
   year?: string;
   round?: string;
+  cacheScope?: string | number;
 }) {
   const [activeTab, setActiveTab] = useState<ReportTab>('RESULTS');
 
-  const reportKey = `${year}:${round}`;
+  const scope = cacheScope ?? 'default';
+  const reportKey = `${year}:${round}:${String(scope)}`;
   const autoTabKeyRef = useRef<string | null>(null);
 
   const { data: report, isLoading, error, refetch } = useQuery({
-    queryKey: ['race_report', year, round],
+    queryKey: ['race_report', year, round, scope],
     queryFn: () => history.raceReport(year, round),
     staleTime: 5 * 60 * 1000,
   });
